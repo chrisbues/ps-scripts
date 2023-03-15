@@ -130,6 +130,8 @@ Function Get-DefenderEndpointEnrolledMachines {
         }
     }
 
+    # List to hold results
+    $results = [System.Collections.Generic.List[object]]::new()
 
     # CSV Name
     $reportName = ([String]::Format("DLP Enrolled Report in Tenant {0} - Generated on {1}.csv", $tenantID,  (get-date).ToString('s')))
@@ -198,19 +200,61 @@ Function Get-DefenderEndpointEnrolledMachines {
         $uri = $uri = "https://api-us.securitycenter.windows.com/api/machines?`$filter=healthStatus in ('Active', 'Inactive') and onboardingStatus eq 'Onboarded'"
     }
 
-    try {
-        $response = Invoke-RestMethod -Headers $header -Uri $uri -Method Get -RetryIntervalSec 5 -MaximumRetryCount 0
-    }
-    catch {
-        Write-Error "Caught $($_.Exception.Response.StatusCode): $($_.ErrorDetails)" -ErrorAction Stop
-    }
+    # Requests
 
-    Write-Information "Retrieved $($response.value.Count) machines"
+    do {
 
-    # Add to datatable
+        # Make the header
+        $header = @{
+            'Authorization' = "Bearer " + $token.accessToken
+        }
+
+
+        try {
+            $response = Invoke-RestMethod -Headers $header -Uri $uri -Method Get -RetryIntervalSec 5 -MaximumRetryCount 0
+        }
+        catch {
+            Write-Error "Caught $($_.Exception.Response.StatusCode): $($_.ErrorDetails)" -ErrorAction Stop
+        }
+
+        switch ($response) {
+            # more than one record returned.
+            ( { $PSItem.value.length -gt 0 }) {
+                # Add the response.value array to the results
+                [void]$results.addrange($response.value)
+            }
+
+            # empty result returned
+            ( { $PSItem.psobject.Properties.name -contains 'value' -and $PSItem.value.length -eq 0 }) {
+                # do nothing
+            }
+
+            default {
+                # singular result
+                [void]$results.add($response)
+
+            }
+
+        }
+
+        # If we have another url to call, do it
+        if ($response.'@odata.nextlink' -or $response.'odata.nextlink') {
+            # public api
+            if ($response.'@odata.nextlink') {
+                $uri = $response.'@odata.nextlink'
+                $nextLink = $true
+            }
+        }
+        else { $nextLink = $false }
+
+        #}
+    } until ($nextLink -eq $false)
+
+ 
+    # Build datatable
 
     if ($UseDLPEndpoint) {
-        foreach ($machine in $response.value) {
+        foreach ($machine in $results) {
             $row = $resultsDT.NewRow()
             $row['id'] = $machine.id
             $row['computerDnsName'] = $machine.computerDnsName
@@ -223,7 +267,7 @@ Function Get-DefenderEndpointEnrolledMachines {
         }
     }
     else {
-        foreach ($machine in $response.value) {
+        foreach ($machine in $results) {
             $row = $resultsDT.NewRow()
             $row['id'] = $machine.id
             $row['computerDnsName'] = $machine.computerDnsName
