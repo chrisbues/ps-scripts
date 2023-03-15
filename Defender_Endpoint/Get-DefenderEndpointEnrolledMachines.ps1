@@ -53,7 +53,7 @@ Function Get-DefenderEndpointEnrolledMachines {
         # Secret
         [Parameter(Mandatory=$true, ParameterSetName='Secret')]
         # Client secret
-        [string] $ClientSecret,
+        [SecureString] $ClientSecret,
 
         # Certificate Thumbprint
         [Parameter(Mandatory=$true, ParameterSetName='Certificate')]
