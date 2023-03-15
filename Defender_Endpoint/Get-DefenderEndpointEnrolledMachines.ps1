@@ -20,6 +20,18 @@
 # Add a TrimDay method to DateTime
 Update-TypeData -TypeName System.DateTime -MemberName TrimDay -MemberType ScriptMethod -Value { [datetime]($this.ticks - ($this.ticks % ((New-TimeSpan -Days 1).ticks)))} -Force
 
+# DBNull function
+function FixNull {
+    Param ( [object] $Value )
+
+    if ([string]::IsNullOrEmpty($Value)) {
+        return [System.DBNull]::Value
+    }
+    else {
+        return $Value
+    }
+}
+
 Function Get-DefenderEndpointEnrolledMachines {
     [CmdletBinding(PositionalBinding=$false,DefaultParameterSetName='User')]
     Param (
@@ -257,12 +269,12 @@ Function Get-DefenderEndpointEnrolledMachines {
         foreach ($machine in $results) {
             $row = $resultsDT.NewRow()
             $row['id'] = $machine.id
-            $row['computerDnsName'] = $machine.computerDnsName
-            $row['healthStatus'] = $machine.healthStatus
-            $row['configStatus'] = $machine.configStatus
-            $row['lastSeen'] = $machine.lastSeen
-            $row['osPlatform'] = $machine.osPlatform
-            $row['osVersion'] = $machine.Version
+            $row['computerDnsName'] = FixNull($machine.computerDnsName)
+            $row['healthStatus'] = FixNull($machine.healthStatus)
+            $row['configStatus'] = FixNull($machine.configStatus)
+            $row['lastSeen'] = FixNull($machine.lastSeen)
+            $row['osPlatform'] = FixNull($machine.osPlatf)orm
+            $row['osVersion'] = FixNull($machine.Version)
             $resultsDT.Rows.Add($row)
         }
     }
@@ -270,25 +282,25 @@ Function Get-DefenderEndpointEnrolledMachines {
         foreach ($machine in $results) {
             $row = $resultsDT.NewRow()
             $row['id'] = $machine.id
-            $row['computerDnsName'] = $machine.computerDnsName
-            $row['firstSeen'] = $machine.firstSeen
-            $row['lastSeen'] = $machine.lastSeen
-            $row['osPlatform'] = $machine.osPlatform
-            $row['osVersion'] = $machine.osVersion
-            $row['osProcessor'] = $machine.osProcessor
-            $row['version'] = $machine.version
-            $row['lastIpAddress'] = $machine.lastIpAddress
-            $row['lastExternalIpAddress'] = $machine.lastExternalIpAddress
-            $row['agentVersion'] = $machine.agentVersion
-            $row['osBuild'] = $machine.osBuild
-            $row['healthStatus'] = $machine.healthStatus
-            $row['deviceValue'] = $machine.deviceValue
-            $row['isAadJoined'] = $machine.isAadJoined
-            $row['aadDeviceId'] = $machine.aadDeviceId
-            $row['defenderAvStatus'] = $machine.defenderAvStatus
-            $row['onboardingStatus'] = $machine.onboardingStatus
-            $row['managedBy'] = $machine.managedBy
-            $row['managedByStatus'] = $machine.managedByStatus
+            $row['computerDnsName'] = FixNull($machine.computerDnsName)
+            $row['firstSeen'] = FixNull($machine.firstSeen)
+            $row['lastSeen'] = FixNull($machine.lastSeen)
+            $row['osPlatform'] = FixNull($machine.osPlatform)
+            $row['osVersion'] = FixNull($machine.osVersion)
+            $row['osProcessor'] = FixNull($machine.osProcessor)
+            $row['version'] = FixNull($machine.version)
+            $row['lastIpAddress'] = FixNull($machine.lastIpAddress)
+            $row['lastExternalIpAddress'] = FixNull($machine.lastExternalIpAddress)
+            $row['agentVersion'] = FixNull($machine.agentVersion)
+            $row['osBuild'] = FixNull($machine.osBuild)
+            $row['healthStatus'] = FixNull($machine.healthStatus)
+            $row['deviceValue'] = FixNull($machine.deviceValue)
+            $row['isAadJoined'] = FixNull($machine.isAadJoined)
+            $row['aadDeviceId'] = FixNull($machine.aadDeviceId)
+            $row['defenderAvStatus'] = FixNull($machine.defenderAvStatus)
+            $row['onboardingStatus'] = FixNull($machine.onboardingStatus)
+            $row['managedBy'] = FixNull($machine.managedBy)
+            $row['managedByStatus'] = FixNull($machine.managedByStatus)
             $resultsDT.Rows.Add($row)
         }
     }
