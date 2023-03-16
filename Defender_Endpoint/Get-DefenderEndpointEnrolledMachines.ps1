@@ -17,9 +17,6 @@
     If the ReturnResults flag is specified, returns a [System.Data.DataTable].
 #>
 
-# Add a TrimDay method to DateTime
-Update-TypeData -TypeName System.DateTime -MemberName TrimDay -MemberType ScriptMethod -Value { [datetime]($this.ticks - ($this.ticks % ((New-TimeSpan -Days 1).ticks)))} -Force
-
 # DBNull function
 function FixNull {
     Param ( [object] $Value )
@@ -64,8 +61,8 @@ Function Get-DefenderEndpointEnrolledMachines {
         [Parameter(ParameterSetName='User', Mandatory=$false)]
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
         [Parameter(ParameterSetName='Secret', Mandatory=$false)]
-        # DataTable filter expression to filter results prior to returning. See https://docs.microsoft.com/en-us/dotnet/api/system.data.datatable.select?view=net-7.0
-        [string] $Filter,
+        # DataTable filter expression to filter results prior to returning. See https://docs.microsoft.com/en-us/dotnet/api/system.data.datatable.select?view=net-7.0. Default filter is healthStatus in ('Active', 'Inactive') and onboardingStatus eq 'Onboarded'.
+        [string] $Filter = "healthStatus in ('Active', 'Inactive') and onboardingStatus eq 'Onboarded'",
 
         # Report path
         [Parameter(ParameterSetName='User', Mandatory=$false)]
@@ -209,7 +206,8 @@ Function Get-DefenderEndpointEnrolledMachines {
         $uri = "https://api.securitycenter.microsoft.com/api/machines/dlp"
     }
     else {
-        $uri = $uri = "https://api-us.securitycenter.windows.com/api/machines?`$filter=healthStatus in ('Active', 'Inactive') and onboardingStatus eq 'Onboarded'"
+        if ([string]::IsNullOrEmpty($filter)) { $uri = "https://api-us.securitycenter.windows.com/api/machines"}
+        else { $uri = "https://api-us.securitycenter.windows.com/api/machines?`$filter=$filter" }
     }
 
     # Requests
