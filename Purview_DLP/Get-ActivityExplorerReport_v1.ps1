@@ -79,6 +79,12 @@ Function Get-ActivityExplorerReport {
         [switch]
         $ReturnResults,
 
+        # Return matches. This will result in potentially sensitive data being written to disk.
+        [Parameter(ParameterSetName='User', Mandatory=$false)]
+        [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
+        [switch]
+        $MatchReport,
+
         # Close any existing sessions and create a new one.
         [Parameter(ParameterSetName='User', Mandatory=$false)]
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
@@ -245,6 +251,22 @@ Function Get-ActivityExplorerReport {
     [void] $resultsDT.Columns.Add('PolicyId', [string])
     [void] $resultsDT.Columns.Add('PolicyName', [string])
 
+    # DT for Matches
+    $matchesDT = [System.Data.DataTable]::new()
+    $col = [System.Data.Datacolumn]::new()
+    $col.ColumnName = 'RecordIdentity'
+    $col.DataType = [string]
+    $col.MaxLength = 900
+    $col.AllowDBNull = $false
+    [void] $matchesDT.Columns.Add($col)
+    [void] $resultsDT.Columns.Add('SITId', [string])
+    [void] $resultsDT.Columns.Add('SITName', [string])
+    [void] $resultsDT.Columns.Add('SITType', [string])
+    [void] $resultsDT.Columns.Add('ClassifierType', [string])
+    [void] $resultsDT.Columns.Add('Count', [string])
+    [void] $resultsDT.Columns.Add('Confidence', [string])
+    [void] $resultsDT.Columns.Add('Value', [string])
+
 
     foreach ($range in $ranges) {
         try {
@@ -296,7 +318,7 @@ Function Get-ActivityExplorerReport {
                                 # DT
                                 # Loop through each unit SIT
 
-                                foreach ($item in $record.SensitiveInfoTypeBucketsData) {
+                                foreach ($bucketItem in $record.SensitiveInfoTypeBucketsData) {
                                     $row = $resultsDT.NewRow()
                                     $row['RecordIdentity'] = $record.RecordIdentity
                                     $row['Activity'] = if ([string]::IsNullOrEmpty($record.Activity)) { [DBNull]::Value } else { $record.Activity }
@@ -305,18 +327,46 @@ Function Get-ActivityExplorerReport {
                                     $row['User'] = if ([string]::IsNullOrEmpty($record.User)) { [DBNull]::Value } else { $record.User }
                                     $row['Workload'] = if ([string]::IsNullOrEmpty($record.Workload)) { [DBNull]::Value } else { $record.Workload }
                                     $row['Filesize'] = if ([string]::IsNullOrEmpty($record.Filesize)) { [DBNull]::Value } else { $record.Filesize }
-                                    $row['SITId'] =  if ([string]::IsNullOrEmpty($item.Id)) { [DBNull]::Value } else { $item.Id }
+                                    $row['SITId'] =  if ([string]::IsNullOrEmpty($bucketItem.Id)) { [DBNull]::Value } else { $bucketItem.Id }
                                     $row['SITName'] = [DBNull]::Value
-                                    $row['Low'] = if ([string]::IsNullOrEmpty($item.Low)) { [DBNull]::Value } else { $item.Low }
-                                    $row['Medium'] = if ([string]::IsNullOrEmpty($item.Medium)) { [DBNull]::Value } else { $item.Medium }
-                                    $row['High'] = if ([string]::IsNullOrEmpty($item.High)) { [DBNull]::Value } else { $item.High }
-                                    $row['ClassifierType'] = if ([string]::IsNullOrEmpty($item.ClassifierType)) { [DBNull]::Value } else { $item.ClassifierType }
+                                    $row['Low'] = if ([string]::IsNullOrEmpty($bucketItem.Low)) { [DBNull]::Value } else { $bucketItem.Low }
+                                    $row['Medium'] = if ([string]::IsNullOrEmpty($bucketItem.Medium)) { [DBNull]::Value } else { $bucketItem.Medium }
+                                    $row['High'] = if ([string]::IsNullOrEmpty($bucketItem.High)) { [DBNull]::Value } else { $bucketItem.High }
+                                    $row['ClassifierType'] = if ([string]::IsNullOrEmpty($bucketItem.ClassifierType)) { [DBNull]::Value } else { $bucketItem.ClassifierType }
                                     $row['Sender'] = if ([string]::IsNullOrEmpty($record.EmailInfo.Sender)) { [DBNull]::Value } else { $record.EmailInfo.Sender }
                                     $row['Receivers'] =  if ([string]::IsNullOrEmpty($record.EmailInfo.Receivers)) { [DBNull]::Value } else { $( $record.EmailInfo.Receivers | Join-String -Separator ',' ) }
                                     $row['PolicyId'] = $record.PolicyMatchInfo.PolicyId
                                     $row['PolicyName'] = [DBNull]::Value
                                     $resultsDT.Rows.Add($row)
                                 }
+
+
+                                # DT for Matches
+                                <#
+                                    [void] $matchesDT.Columns.Add($col)
+    [void] $resultsDT.Columns.Add('SITId', [string])
+    [void] $resultsDT.Columns.Add('SITName', [string])
+    [void] $resultsDT.Columns.Add('SITType', [string])
+    [void] $resultsDT.Columns.Add('ClassifierType', [string])
+    [void] $resultsDT.Columns.Add('Value', [string])
+
+                                #>
+
+                                foreach($typeItem in $record.SensitiveInfoTypeData) {
+                                    foreach($valueItem in $typeItem.SensitiveInformationDetectionsInfo.DetectedValues) {
+                                        $row = $matchesDT.NewRow()
+                                        $row['RecordIdentity'] = $record.RecordIdentity
+                                        $row['SITId'] = $typeItem.SensitiveInfoTypeId
+                                        $row['SITName'] = [DBNull]::Value
+                                        $row['SITType'] = [DBNull]::Value
+                                        $row['ClassifierType'] = $typeItem.ClassifierType
+                                        $row['Count'] = $typeItem.Count
+                                        $row['Confidence'] = $typeItem.Confidence
+                                        $row['Value'] = $valueItem.Name
+                                        $matchesDT.Rows.Add($row)
+                                    }
+                                }
+
                         }
                     }
                     else {
