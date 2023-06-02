@@ -4,7 +4,8 @@
     Get Purview Activity Explorer DLP reports
 .DESCRIPTION
     Get Purview Activity Explorer DLP reports using the ExchangeOnlineManagement module.
-    By default this writes the results for the last 30 days to the current directory. Use the -Reportpath option to specify a different path.
+    By default this writes the results for the last 30 days to a csv in the current directory. Use the -Reportpath option to specify a different path.
+    Adding the -MatchReport switch will result in potentially sensitive data being written to disk in a separate csv in the report path directory.
 .EXAMPLE
     Get-ActivityExplorerReport
 .EXAMPLE
@@ -21,13 +22,7 @@ Update-TypeData -TypeName System.DateTime -MemberName TrimDay -MemberType Script
 Function Get-ActivityExplorerReport {
     [CmdletBinding(PositionalBinding=$false,DefaultParameterSetName='User')]
     Param (
-        <# Using Filter 1 for Activity for now
-        # Filter 1
-        [Parameter(ParameterSetName='User', Mandatory=$false)]
-        [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
-        [array]
-        $Filter1,
-        #>
+
         # Filter 2
         [Parameter(ParameterSetName='User', Mandatory=$false)]
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
@@ -265,15 +260,15 @@ Function Get-ActivityExplorerReport {
     [void] $matchesDT.Columns.Add('SITType', [string])
     [void] $matchesDT.Columns.Add('Publisher', [string])
     [void] $matchesDT.Columns.Add('ClassifierType', [string])
-    [void] $matchesDT.Columns.Add('Count', [string])
     [void] $matchesDT.Columns.Add('Confidence', [string])
     [void] $matchesDT.Columns.Add('Value', [string])
 
-
+    # Build parameters
     foreach ($range in $ranges) {
         try {
             Write-Information "Processing Date Range: $($range.startDate.ToShortDateString()) - $($range.endDate.ToShortDateString())"
-            # Build parameters
+
+            # Build parameters for export-activityexplorerdata cmdlet
             $exportParams = @{}
             $exportParams['StartTime'] = $range.startDate
             $exportParams['EndTime']  = $range.endDate
@@ -289,8 +284,7 @@ Function Get-ActivityExplorerReport {
             do
                 {
                     try {
-
-
+                        # Export data
                         $response = Export-ActivityExplorerData @exportParams
                     }
                     catch [System.Management.Automation.Remoting.PSRemotingTransportException]{
@@ -318,7 +312,7 @@ Function Get-ActivityExplorerReport {
                                 $results.Add($record)
 
                                 # DT
-                                # Loop through each unit SIT
+                                # Loop through each SIT
 
                                 foreach ($bucketItem in $record.SensitiveInfoTypeBucketsData) {
                                     $row = $resultsDT.NewRow()
@@ -342,17 +336,8 @@ Function Get-ActivityExplorerReport {
                                     $resultsDT.Rows.Add($row)
                                 }
 
+                            # Match Report
 
-                                # DT for Matches
-                                <#
-                                [void] $matchesDT.Columns.Add($col)
-                                [void] $resultsDT.Columns.Add('SITId', [string])
-                                [void] $resultsDT.Columns.Add('SITName', [string])
-                                [void] $resultsDT.Columns.Add('SITType', [string])
-                                [void] $resultsDT.Columns.Add('ClassifierType', [string])
-                                [void] $resultsDT.Columns.Add('Value', [string])
-
-                                #>
                             if ($matchReport) {
                                 foreach($typeItem in $record.SensitiveInfoTypeData) {
                                     foreach($valueItem in $typeItem.SensitiveInformationDetectionsInfo.DetectedValues) {
@@ -364,7 +349,6 @@ Function Get-ActivityExplorerReport {
                                         $row['SITType'] = [DBNull]::Value
                                         $row['Publisher'] = [DBNull]::Value
                                         $row['ClassifierType'] = $typeItem.ClassifierType
-                                        $row['Count'] = $typeItem.Count
                                         $row['Confidence'] = $typeItem.Confidence
                                         $row['Value'] = $valueItem.Name
                                         $matchesDT.Rows.Add($row)
@@ -389,10 +373,7 @@ Function Get-ActivityExplorerReport {
         }
     }
 
-
-
-    # Resolve IDs
-    # SIT Names
+    # Resolve SIT Attributes
 
     Write-Information "Resolving SIT Names"
     foreach ($sit in $sitTypesDT) {
@@ -413,7 +394,7 @@ Function Get-ActivityExplorerReport {
 
     $resultsDT.AcceptChanges()
 
-
+    # Matches Report
     if ($MatchReport) {
         foreach ($sit in $sitTypesDT) {
             $search = $matchesDT.Select("SITId = '$($sit.Id)'")
@@ -492,9 +473,11 @@ Function Connect-IPPS {
     $psSessions = get-psSession
 
     try {
-        if (!($psSessions.where({ $_.State -eq 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' }))) {
+        if (!($psSessions.where({ $_.State -ne 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' }))) {
             # Clean up any old sessions
             $psSessions.where({$_.ComputerName -like '*.compliance.protection.outlook.com'}) | Remove-PSSession
+            Write-Information "Connecting to Purview"
+            Connect-IPPSSession @exportParams
 
         }
         elseif ($psSessions.where({ $_.State -eq 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' })) {
