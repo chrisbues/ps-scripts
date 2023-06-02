@@ -4,7 +4,8 @@
     Get Purview Activity Explorer DLP reports
 .DESCRIPTION
     Get Purview Activity Explorer DLP reports using the ExchangeOnlineManagement module.
-    By default this writes the results for the last 30 days to the current directory. Use the -Reportpath option to specify a different path.
+    By default this writes the results for the last 30 days to a csv in the current directory. Use the -Reportpath option to specify a different path.
+    Adding the -MatchReport switch will result in potentially sensitive data being written to disk in a separate csv in the report path directory.
 .EXAMPLE
     Get-ActivityExplorerReport
 .EXAMPLE
@@ -21,13 +22,7 @@ Update-TypeData -TypeName System.DateTime -MemberName TrimDay -MemberType Script
 Function Get-ActivityExplorerReport {
     [CmdletBinding(PositionalBinding=$false,DefaultParameterSetName='User')]
     Param (
-        <# Using Filter 1 for Activity for now
-        # Filter 1
-        [Parameter(ParameterSetName='User', Mandatory=$false)]
-        [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
-        [array]
-        $Filter1,
-        #>
+
         # Filter 2
         [Parameter(ParameterSetName='User', Mandatory=$false)]
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
@@ -57,14 +52,14 @@ Function Get-ActivityExplorerReport {
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
         [ValidateScript({[boolean]($_ -as [datetime]) -and [datetime]$_ -ge (get-date).addDays(-30).ToUniversalTime() -and [datetime]$_ -le (Get-date) }, ErrorMessage="{0} must be between 30 days ago and now.")]
         [datetime]
-        $StartDate,
+        $StartDate = (get-date).addDays(-29),
 
         # End Date. Default is now.
         [Parameter(ParameterSetName='User', Mandatory=$false)]
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
         [ValidateScript({[boolean]($_ -as [datetime]) -and [datetime]$_ -le (Get-date) -and [datetime]$_ -ge (get-date).addDays(-30).ToUniversalTime() },ErrorMessage="{0} must be between 30 days ago and now.")]
         [datetime]
-        $EndDate,
+        $EndDate = (get-date),
 
         # Report Path. Defaults to the current directory.
         [Parameter(ParameterSetName='User', Mandatory=$false)]
@@ -79,11 +74,23 @@ Function Get-ActivityExplorerReport {
         [switch]
         $ReturnResults,
 
+        # Return matches. This will result in potentially sensitive data being written to disk.
+        [Parameter(ParameterSetName='User', Mandatory=$false)]
+        [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
+        [switch]
+        $MatchReport,
+
         # Close any existing sessions and create a new one.
         [Parameter(ParameterSetName='User', Mandatory=$false)]
         [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
         [switch]
         $NewSession,
+
+        # Close the session created when finished.
+        [Parameter(ParameterSetName='User', Mandatory=$false)]
+        [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
+        [switch]
+        $ClearSession,
 
         # Certificate Thumbprint
         [Parameter(Mandatory=$true, ParameterSetName='Certificate')]
@@ -105,6 +112,11 @@ Function Get-ActivityExplorerReport {
     $PreviousInformationPreference = $InformationPreference
     $InformationPreference = 'Continue'
 
+    # Match report
+    if ($MatchReport) {
+        Write-Warning "The -MatchReport switch will result in potentially sensitive data being written to disk."
+    }
+
     # Connect to the tenant
 
     # Parameters for Connect-IPPS
@@ -125,11 +137,27 @@ Function Get-ActivityExplorerReport {
     # Connect
     Connect-IPPS @connectexportParams
 
+    
     # Get name of tenant. This is stupid, but it works.
     $policy = (Get-PolicyConfig).Id
     $tenant = ($policy.Split('/'))[2]
 
     Write-Information "Connected to $tenant"
+
+    # Fix up the dates to be midnight UTC
+    $startDate = $startDate.ToUniversalTime().TrimDay()
+    $endDate = $endDate.ToUniversalTime().TrimDay()
+
+    # report paths
+
+    $reportFullPath = ([String]::Format("Activity Explorer Report in Tenant {0} - {1} to {2} - Generated on {3}.csv", $tenant, $StartDate.ToString('s'), $EndDate.ToString('s'), (get-date).ToString('s')))
+    $reportFullPath = "$ReportPath\" + [String]::join('_', $reportFullPath.Split([IO.Path]::GetInvalidFileNameChars()))
+
+    if ($matchReport) {
+        $matchReportFullPath = ([String]::Format("Activity Explorer SENSITIVE DATA Match Report in Tenant {0} - {1} to {2} - Generated on {3}.csv", $tenant, $StartDate.ToString('s'), $EndDate.ToString('s'), (get-date).ToString('s')))
+        $matchReportFullPath = "$ReportPath\" + [String]::join('_', $matchReportFullPath.Split([IO.Path]::GetInvalidFileNameChars()))
+    }
+
 
     # Get SIT Types
     $sitTypes = Get-DlpSensitiveInformationType
@@ -143,6 +171,7 @@ Function Get-ActivityExplorerReport {
     [void] $sitTypesDT.Columns.Add($col)
     [void] $sitTypesDT.Columns.Add('Name', [string])
     [void] $sitTypesDT.Columns.Add('Publisher', [string])
+    [void] $sitTypesDT.Columns.Add('Type', [string])
 
     # Add SIT Types to DataTable
     foreach ($sitType in $sitTypes) {
@@ -150,6 +179,7 @@ Function Get-ActivityExplorerReport {
         $row['Id'] = $sitType.Id
         $row['Name'] = $sitType.Name
         $row['Publisher'] = $sitType.Publisher
+        $row['Type'] = $sitType.Type
         [void] $sitTypesDT.Rows.Add($row)
     }
 
@@ -177,23 +207,6 @@ Function Get-ActivityExplorerReport {
     $ranges = $null
     $ranges = [System.Collections.Generic.List[hashtable]]::new()
 
-    # Build Date Danges
-    if ($startDate) {
-        $startDate = $startDate.ToUniversalTime().TrimDay()
-    }
-    else {
-        $startDate = (get-date).addDays(-29).ToUniversalTime().TrimDay()
-    }
-
-    if ($endDate) {
-        $endDate = $endDate.ToUniversalTime().TrimDay()
-    }
-    else {
-        $endDate = (get-date).ToUniversalTime().TrimDay()
-    }
-
-
-
     # Build Range Table. Chunk into days.
     $ranges = $null
     $ranges = [System.Collections.Generic.List[hashtable]]::new()
@@ -210,11 +223,6 @@ Function Get-ActivityExplorerReport {
             })
         $stepBegin = $stepEnd
     } until ($stepEnd -ge $endDate)
-
-    # CSV Name
-    $reportFullPath = ([String]::Format("Activity Explorer Report in Tenant {0} - {1} to {2} - Generated on {3}.csv", $tenant, $StartDate.ToString('s'), $EndDate.ToString('s'), (get-date).ToString('s')))
-
-    $reportFullPath = "$ReportPath\" + [String]::join('_', $reportFullPath.Split([IO.Path]::GetInvalidFileNameChars()))
 
 
     # Range for results
@@ -245,11 +253,29 @@ Function Get-ActivityExplorerReport {
     [void] $resultsDT.Columns.Add('PolicyId', [string])
     [void] $resultsDT.Columns.Add('PolicyName', [string])
 
+    # DT for Matches
+    $matchesDT = [System.Data.DataTable]::new()
+    $col = [System.Data.Datacolumn]::new()
+    $col.ColumnName = 'RecordIdentity'
+    $col.DataType = [string]
+    $col.MaxLength = 900
+    $col.AllowDBNull = $false
+    [void] $matchesDT.Columns.Add($col)
+    [void] $matchesDT.Columns.Add('Date', [dateTime])
+    [void] $matchesDT.Columns.Add('SITId', [string])
+    [void] $matchesDT.Columns.Add('SITName', [string])
+    [void] $matchesDT.Columns.Add('SITType', [string])
+    [void] $matchesDT.Columns.Add('Publisher', [string])
+    [void] $matchesDT.Columns.Add('ClassifierType', [string])
+    [void] $matchesDT.Columns.Add('Confidence', [string])
+    [void] $matchesDT.Columns.Add('Value', [string])
 
+    # Build parameters
     foreach ($range in $ranges) {
         try {
             Write-Information "Processing Date Range: $($range.startDate.ToShortDateString()) - $($range.endDate.ToShortDateString())"
-            # Build parameters
+
+            # Build parameters for export-activityexplorerdata cmdlet
             $exportParams = @{}
             $exportParams['StartTime'] = $range.startDate
             $exportParams['EndTime']  = $range.endDate
@@ -265,8 +291,7 @@ Function Get-ActivityExplorerReport {
             do
                 {
                     try {
-
-
+                        # Export data
                         $response = Export-ActivityExplorerData @exportParams
                     }
                     catch [System.Management.Automation.Remoting.PSRemotingTransportException]{
@@ -294,9 +319,9 @@ Function Get-ActivityExplorerReport {
                                 $results.Add($record)
 
                                 # DT
-                                # Loop through each unit SIT
+                                # Loop through each SIT
 
-                                foreach ($item in $record.SensitiveInfoTypeBucketsData) {
+                                foreach ($bucketItem in $record.SensitiveInfoTypeBucketsData) {
                                     $row = $resultsDT.NewRow()
                                     $row['RecordIdentity'] = $record.RecordIdentity
                                     $row['Activity'] = if ([string]::IsNullOrEmpty($record.Activity)) { [DBNull]::Value } else { $record.Activity }
@@ -305,18 +330,39 @@ Function Get-ActivityExplorerReport {
                                     $row['User'] = if ([string]::IsNullOrEmpty($record.User)) { [DBNull]::Value } else { $record.User }
                                     $row['Workload'] = if ([string]::IsNullOrEmpty($record.Workload)) { [DBNull]::Value } else { $record.Workload }
                                     $row['Filesize'] = if ([string]::IsNullOrEmpty($record.Filesize)) { [DBNull]::Value } else { $record.Filesize }
-                                    $row['SITId'] =  if ([string]::IsNullOrEmpty($item.Id)) { [DBNull]::Value } else { $item.Id }
+                                    $row['SITId'] =  if ([string]::IsNullOrEmpty($bucketItem.Id)) { [DBNull]::Value } else { $bucketItem.Id }
                                     $row['SITName'] = [DBNull]::Value
-                                    $row['Low'] = if ([string]::IsNullOrEmpty($item.Low)) { [DBNull]::Value } else { $item.Low }
-                                    $row['Medium'] = if ([string]::IsNullOrEmpty($item.Medium)) { [DBNull]::Value } else { $item.Medium }
-                                    $row['High'] = if ([string]::IsNullOrEmpty($item.High)) { [DBNull]::Value } else { $item.High }
-                                    $row['ClassifierType'] = if ([string]::IsNullOrEmpty($item.ClassifierType)) { [DBNull]::Value } else { $item.ClassifierType }
+                                    $row['Low'] = if ([string]::IsNullOrEmpty($bucketItem.Low)) { [DBNull]::Value } else { $bucketItem.Low }
+                                    $row['Medium'] = if ([string]::IsNullOrEmpty($bucketItem.Medium)) { [DBNull]::Value } else { $bucketItem.Medium }
+                                    $row['High'] = if ([string]::IsNullOrEmpty($bucketItem.High)) { [DBNull]::Value } else { $bucketItem.High }
+                                    $row['ClassifierType'] = if ([string]::IsNullOrEmpty($bucketItem.ClassifierType)) { [DBNull]::Value } else { $bucketItem.ClassifierType }
                                     $row['Sender'] = if ([string]::IsNullOrEmpty($record.EmailInfo.Sender)) { [DBNull]::Value } else { $record.EmailInfo.Sender }
                                     $row['Receivers'] =  if ([string]::IsNullOrEmpty($record.EmailInfo.Receivers)) { [DBNull]::Value } else { $( $record.EmailInfo.Receivers | Join-String -Separator ',' ) }
                                     $row['PolicyId'] = $record.PolicyMatchInfo.PolicyId
                                     $row['PolicyName'] = [DBNull]::Value
                                     $resultsDT.Rows.Add($row)
                                 }
+
+                            # Match Report
+
+                            if ($matchReport) {
+                                foreach($typeItem in $record.SensitiveInfoTypeData) {
+                                    foreach($valueItem in $typeItem.SensitiveInformationDetectionsInfo.DetectedValues) {
+                                        $row = $matchesDT.NewRow()
+                                        $row['RecordIdentity'] = $record.RecordIdentity
+                                        $row['Date'] = $record.Happened
+                                        $row['SITId'] = $typeItem.SensitiveInfoTypeId
+                                        $row['SITName'] = [DBNull]::Value
+                                        $row['SITType'] = [DBNull]::Value
+                                        $row['Publisher'] = [DBNull]::Value
+                                        $row['ClassifierType'] = $typeItem.ClassifierType
+                                        $row['Confidence'] = $typeItem.Confidence
+                                        $row['Value'] = $valueItem.Name
+                                        $matchesDT.Rows.Add($row)
+                                    }
+                                }
+                            }
+
                         }
                     }
                     else {
@@ -334,10 +380,7 @@ Function Get-ActivityExplorerReport {
         }
     }
 
-
-
-    # Resolve IDs
-    # SIT Names
+    # Resolve SIT Attributes
 
     Write-Information "Resolving SIT Names"
     foreach ($sit in $sitTypesDT) {
@@ -346,7 +389,6 @@ Function Get-ActivityExplorerReport {
             $row['SITName'] = $sit.Name
         }
     }
-
 
     Write-Information "Resolving Policy Names"
     # Policy Names
@@ -359,17 +401,44 @@ Function Get-ActivityExplorerReport {
 
     $resultsDT.AcceptChanges()
 
-    # exort to CSV
+    # Matches Report
+    if ($MatchReport) {
+        foreach ($sit in $sitTypesDT) {
+            $search = $matchesDT.Select("SITId = '$($sit.Id)'")
+            foreach ($row in $search) {
+                $row['SITName'] = $sit.Name
+                $row['SITType'] = $sit.Type
+                $row['Publisher'] = $sit.Publisher
+
+            }
+        }
+    }
+
+    $matchesDT.AcceptChanges()
+
+
+    # Clear session
+    if ($ClearSession) {
+        Write-Information "Clearing session"
+        get-pssession | where-object {$_.ComputerName -like '*.compliance.protection.outlook.com'} | Remove-PSSession
+    }
+
+    # export to CSV
 
     try {
         $resultsDT | Export-Csv -Path $reportFullPath -NoTypeInformation -Force
+        if ($MatchReport) {
+            $matchesDT | Export-Csv -Path $matchReportFullPath -NoTypeInformation -Force
+        }
     }
     catch {
         Throw "Error exporting results"
-
     }
 
     Write-Information "Complete. Report is located at $reportFullPath"
+    if ($MatchReport) {
+        Write-warning "Match Report containing SENSNTIVE DATA is located at $matchReportFullPath"
+    }
 
     # return results
 
@@ -411,30 +480,32 @@ Function Connect-IPPS {
 
     # Clear any existing sessions if the -NewSession flag is specified.
     if ($NewSession) {
-        get-pssession | ? {$_.ComputerName -like '*.compliance.protection.outlook.com'} | Remove-PSSession
+        Write-Information "Clearing existing sessions"
+        get-pssession | where-object {$_.ComputerName -like '*.compliance.protection.outlook.com'} | Remove-PSSession
     }
 
     # Get sessions
     $psSessions = get-psSession
 
     try {
-        if (!($psSessions.where({ $_.State -eq 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' }))) {
+        if ($psSessions.where({ $_.State -ne 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' })) {
             # Clean up any old sessions
             $psSessions.where({$_.ComputerName -like '*.compliance.protection.outlook.com'}) | Remove-PSSession
-
-            # Create a new session
+            Write-Information "Connecting to Purview"
             Connect-IPPSSession @exportParams
+
         }
         elseif ($psSessions.where({ $_.State -eq 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' })) {
-            Write-Information "Using existing session."
+            Write-Information "Using existing Purview session"
         }
         else
         {
-            Write-Information "Connecting to Compliance Center."
+            Write-Information "Connecting to Purview"
             Connect-IPPSSession @exportParams
         }
     }
     catch {
-        Throw "Error connecting to Compliance Center."
+        Throw "Error connecting to Purview"
     }
+
 }
