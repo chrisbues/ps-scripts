@@ -86,6 +86,12 @@ Function Get-ActivityExplorerReport {
         [switch]
         $NewSession,
 
+        # Close the session created when finished.
+        [Parameter(ParameterSetName='User', Mandatory=$false)]
+        [Parameter(ParameterSetName='Certificate', Mandatory=$false)]
+        [switch]
+        $ClearSession,
+
         # Certificate Thumbprint
         [Parameter(Mandatory=$true, ParameterSetName='Certificate')]
         [string]
@@ -131,6 +137,7 @@ Function Get-ActivityExplorerReport {
     # Connect
     Connect-IPPS @connectexportParams
 
+    
     # Get name of tenant. This is stupid, but it works.
     $policy = (Get-PolicyConfig).Id
     $tenant = ($policy.Split('/'))[2]
@@ -409,6 +416,13 @@ Function Get-ActivityExplorerReport {
 
     $matchesDT.AcceptChanges()
 
+
+    # Clear session
+    if ($ClearSession) {
+        Write-Information "Clearing session"
+        get-pssession | where-object {$_.ComputerName -like '*.compliance.protection.outlook.com'} | Remove-PSSession
+    }
+
     # export to CSV
 
     try {
@@ -466,6 +480,7 @@ Function Connect-IPPS {
 
     # Clear any existing sessions if the -NewSession flag is specified.
     if ($NewSession) {
+        Write-Information "Clearing existing sessions"
         get-pssession | where-object {$_.ComputerName -like '*.compliance.protection.outlook.com'} | Remove-PSSession
     }
 
@@ -473,7 +488,7 @@ Function Connect-IPPS {
     $psSessions = get-psSession
 
     try {
-        if (!($psSessions.where({ $_.State -ne 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' }))) {
+        if ($psSessions.where({ $_.State -ne 'Opened' -and $_.ComputerName -like '*.compliance.protection.outlook.com' })) {
             # Clean up any old sessions
             $psSessions.where({$_.ComputerName -like '*.compliance.protection.outlook.com'}) | Remove-PSSession
             Write-Information "Connecting to Purview"
@@ -492,4 +507,5 @@ Function Connect-IPPS {
     catch {
         Throw "Error connecting to Purview"
     }
+
 }
