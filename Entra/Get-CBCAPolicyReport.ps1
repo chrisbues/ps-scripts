@@ -158,7 +158,7 @@ Function Get-CBCAPolicyReport {
 
             'includeGuestsOrExternalUsers'                   = $policy.conditions.users.includeGuestsOrExternalUsers
             'excludeGuestsOrExternalUsers'                   = $policy.conditions.users.excludeGuestsOrExternalUsers
-            
+
             'includeApplications'                            = $(
                 $items = [System.Collections.Generic.List[string]]::new()
                 foreach ($application in $policy.conditions.applications.includeApplications) {
@@ -185,8 +185,8 @@ Function Get-CBCAPolicyReport {
             )
             'includeUserActions'                             = $(if ($null -ne $policy.conditions.applications.includeUserActions) { [String]::join("`n", $policy.conditions.applications.includeUserActions) })
             'userRiskLevels'                                 = $(if ($null -ne $policy.conditions.userRiskLevels) { [String]::join("`n", $policy.conditions.userRiskLevels) })
-            'InsiderRiskLevels'                              = $(if ($null -ne $policy.conditions.signInRiskLevels) { [String]::join("`n", $policy.conditions.signInRiskLevels) })
-            'ServicePrincipalRiskLevels'                     = $(if ($null -ne $policy.conditions.signInRiskLevels) { [String]::join("`n", $policy.conditions.signInRiskLevels) })
+            'InsiderRiskLevels'                              = $(if ($null -ne $policy.conditions.InsiderRiskLevels) { [String]::join("`n", $policy.conditions.InsiderRiskLevels) })
+            'ServicePrincipalRiskLevels'                     = $(if ($null -ne $policy.conditions.ServicePrincipalRiskLevels) { [String]::join("`n", $policy.conditions.ServicePrincipalRiskLevels) })
             'signInRiskLevels'                               = $(if ($null -ne $policy.conditions.signInRiskLevels) { [String]::join("`n", $policy.conditions.signInRiskLevels) })
             'includePlatforms'                               = $(if ($null -ne $policy.conditions.platforms.includePlatforms) { [String]::join("`n", $policy.conditions.platforms.includePlatforms) })
             'excludePlatforms'                               = $(if ($null -ne $policy.conditions.platforms.excludePlatforms) { [String]::join("`n", $policy.conditions.platforms.excludePlatforms) })
@@ -222,6 +222,7 @@ Function Get-CBCAPolicyReport {
                 }
                 if ($items.count -gt 0) { [String]::join("`n", $items) }
             )
+            'AuthenticationFlows'                            = $(if ($null -ne $policy.conditions.AuthenticationFlows.TransferMethods) { [String]::join("`n", $policy.conditions.AuthenticationFlows.TransferMethods) })            
             'grantControls'                                  = $(if ($null -ne $policy.grantControls.builtInControls) { [String]::join("`n", $policy.grantControls.builtInControls) })
             'termsOfUses'                                    = $(
                 $items = [System.Collections.Generic.List[string]]::new()
