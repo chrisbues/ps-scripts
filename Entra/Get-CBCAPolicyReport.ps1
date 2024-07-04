@@ -11,7 +11,7 @@ When first you will need login via devicelogin against the tenant with GA. This 
 The Graph API scopes needed are: Policy.Read.All, Policy.Read.All, Directory.Read.All, Agreement.Read.All, Application.Read.All
 
 .EXAMPLE
-Get-CatPSConditionalAccessReport.ps1 -tenant
+Get-CBCAPolicyReport.ps1
 Loading Modules
 Authenticating
 Getting CA Policies
@@ -22,10 +22,6 @@ Complete. Report is located at <path>
 Function Get-CBCAPolicyReport {
     [CmdletBinding()]
     param (
-        [Parameter(Mandatory = $true)]
-        [string]
-        $Tenant,
-
         # Report Path. Defaults to the current directory.
         [Parameter(Mandatory = $false)]
         [ValidateScript({ Test-Path -Path $_ -PathType Container })]
@@ -34,18 +30,21 @@ Function Get-CBCAPolicyReport {
     )
 
     $InformationPreference = 'Continue'
-    Write-Information "Loading Microsoft Graph SDK for PowerShell. This may take a few minutes..."
-    # Switch to beta endpoint
-    Select-MgProfile -Name Beta
 
-    # Clear any existing sessions. The Graph module chaches the tenant you've connected to. Not ever certain where this is stored. Need to dig into this more. Nothing in the docs.
+    $requiredScopres = @('Policy.Read.All', 'Directory.Read.All', 'Agreement.Read.All', 'Application.Read.All')
 
-    Write-Information "Authenticating"
-    try {
-        Connect-MgGraph -tenant $Tenant -Scopes "Policy.Read.All", "Directory.Read.All", "Agreement.Read.All", "Application.Read.All" -ErrorAction Stop
+
+    Write-Information "Testing Graph connection and scopes."
+    $context = Get-MgContext 
+
+    if ($null -eq $context) {
+        Write-Error "No Graph context found. Ensure you have an active connection to the Graph API. Exiting." -ErrorAction Stop
     }
-    catch {
-        throwUser "Error Connecting to Graph"
+
+    foreach ($scope in $requiredScopres) {
+        if (-not ($context.Scopes -contains $scope)) {
+            Write-Error "Required scope $scope not found. Exiting." -ErrorAction Stop
+        }
     }
 
 
@@ -156,8 +155,13 @@ Function Get-CBCAPolicyReport {
                 if ($items.count -gt 0) { [String]::join("`n", $items) }
             )
 
-            'includeGuestsOrExternalUsers'                   = $policy.conditions.users.includeGuestsOrExternalUsers
+            #'includeGuestsOrExternalUsers'                   = $policy.conditions.users.includeGuestsOrExternalUsers
             'excludeGuestsOrExternalUsers'                   = $policy.conditions.users.excludeGuestsOrExternalUsers
+
+
+
+
+
 
             'includeApplications'                            = $(
                 $items = [System.Collections.Generic.List[string]]::new()
@@ -253,7 +257,9 @@ Function Get-CBCAPolicyReport {
 
     $reportFullPath = ([String]::Format("Conditional Access policy Design Report {0} - Generated on {1}.xlsx", $org.DisplayName, (get-date).ToString('s')))
     $reportFullPath = "$ReportPath\" + [String]::join('_', $reportFullPath.Split([IO.Path]::GetInvalidFileNameChars()))
-    $Results | Export-Excel -Path $reportFullPath -WorksheetName "CA Policies" -BoldTopRow -FreezeTopRow -AutoFilter -AutoSize -ClearSheet
+    $report = $Results | Export-Excel -Path $reportFullPath -WorksheetName "CA Policies" -BoldTopRow -FreezeTopRow -AutoFilter -AutoSize -ClearSheet -PassThru
+    $report.Workbook.Worksheets["CA Policies"].Cells["A:AJ"].Style.WrapText = $true
+    Close-ExcelPackage $report
     Write-Information "Complete. Report is located at $reportFullPath"
 
 
